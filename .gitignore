@@ -1,0 +1,20 @@
+# gradle
+.gradle/
+build/
+out/
+classes/
+
+# idea
+.idea/
+*.ipr
+*.iws
+*.iml
+.vscode/
+
+# macos
+.DS_Store
+
+# dev
+run/
+# tooling
+.commandcode/

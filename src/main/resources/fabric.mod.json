@@ -1,0 +1,23 @@
+{
+	"schemaVersion": 1,
+	"id": "tapedeck",
+	"version": "${version}",
+	"name": "Tapedeck",
+	"description": "Shows the track currently playing in Apple Music on your HUD. macOS only.",
+	"authors": [
+		"honganh21"
+	],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"dev.tapedeck.TapeDeckMod"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
