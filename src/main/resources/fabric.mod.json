@@ -3,7 +3,7 @@
 	"id": "tapedeck",
 	"version": "${version}",
 	"name": "Tapedeck",
-	"description": "Shows the track currently playing in Apple Music on your HUD. macOS only.",
+	"description": "Shows the track currently playing on your HUD: Apple Music on macOS, any MPRIS player on Linux.",
 	"authors": [
 		"honganh21"
 	],

@@ -7,9 +7,14 @@ package dev.tapedeck.music;
  * snapshot. AppleScript only reports the play position once per poll, so the HUD
  * interpolates between snapshots rather than showing a value that ticks over in
  * visible one-second jumps.
+ *
+ * <p>{@link #key()} identifies the current track and is empty when there is none. The
+ * HUD uses it to restart the fade when the track changes; the bridge uses it to decide
+ * when interpolation has to be re-anchored.
  */
 public record NowPlayingInfo(State state, String title, String artist, String album,
-                             double position, double duration, long stamp, String detail) {
+                             double position, double duration, long stamp, String detail,
+                             String key) {
 
 	public enum State {
 		/** A track is playing. */
@@ -25,20 +30,38 @@ public record NowPlayingInfo(State state, String title, String artist, String al
 	}
 
 	public static final NowPlayingInfo UNAVAILABLE = unavailable("");
-	public static final NowPlayingInfo STOPPED = new NowPlayingInfo(State.STOPPED, "", "", "", 0, 0, 0L, "");
+	public static final NowPlayingInfo STOPPED =
+			new NowPlayingInfo(State.STOPPED, "", "", "", 0, 0, 0L, "", "");
 
 	public static NowPlayingInfo unavailable(String detail) {
-		return new NowPlayingInfo(State.UNAVAILABLE, "", "", "", 0, 0, System.currentTimeMillis(), detail);
+		return new NowPlayingInfo(State.UNAVAILABLE, "", "", "", 0, 0,
+				System.currentTimeMillis(), detail, "");
 	}
 
 	public static NowPlayingInfo error(String detail) {
-		return new NowPlayingInfo(State.ERROR, "", "", "", 0, 0, System.currentTimeMillis(), detail);
+		return new NowPlayingInfo(State.ERROR, "", "", "", 0, 0,
+				System.currentTimeMillis(), detail, "");
+	}
+
+	/** Track identity derived from the metadata, for sources that have nothing better. */
+	private static String defaultKey(String title, String artist, String album) {
+		return title + '\u001f' + artist + '\u001f' + album;
 	}
 
 	public static NowPlayingInfo of(State state, String title, String artist, String album,
 	                               double position, double duration) {
+		return of(state, title, artist, album, position, duration,
+				defaultKey(clean(title), clean(artist), clean(album)));
+	}
+
+	/**
+	 * @param key stable identity of the track; changes exactly when the track changes,
+	 *            and must not include the play position
+	 */
+	public static NowPlayingInfo of(State state, String title, String artist, String album,
+	                               double position, double duration, String key) {
 		return new NowPlayingInfo(state, clean(title), clean(artist), clean(album),
-				position, duration, System.currentTimeMillis(), "");
+				position, duration, System.currentTimeMillis(), "", key == null ? "" : key);
 	}
 
 	/** True when there is a track worth drawing on the HUD. */

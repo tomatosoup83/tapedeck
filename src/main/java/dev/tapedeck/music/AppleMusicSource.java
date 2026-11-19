@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
  *
  * <p>{@link #snapshot()} is safe to call from the render thread.
  */
-public final class MusicBridge implements AutoCloseable {
+public final class AppleMusicSource implements NowPlayingSource {
 
 	private static final Logger LOG = LoggerFactory.getLogger("tapedeck/music");
 
@@ -114,7 +114,7 @@ public final class MusicBridge implements AutoCloseable {
 	private String lastLoggedMessage = "";
 	private long lastLogMillis;
 
-	private MusicBridge(long pollIntervalMs) {
+	private AppleMusicSource(long pollIntervalMs) {
 		this.pollSeconds = Math.max(200L, pollIntervalMs) / 1000.0;
 	}
 
@@ -123,12 +123,12 @@ public final class MusicBridge implements AutoCloseable {
 		return System.getProperty("os.name", "").toLowerCase().contains("mac");
 	}
 
-	public static MusicBridge create() {
+	public static AppleMusicSource create() {
 		return create(1000L);
 	}
 
-	public static MusicBridge create(long pollIntervalMs) {
-		return new MusicBridge(pollIntervalMs);
+	public static AppleMusicSource create(long pollIntervalMs) {
+		return new AppleMusicSource(pollIntervalMs);
 	}
 
 	/** The most recent snapshot. Never {@code null}. */

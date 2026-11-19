@@ -1,11 +1,13 @@
 package dev.tapedeck.hud;
 
 import dev.tapedeck.music.NowPlayingInfo;
+import dev.tapedeck.music.TapedeckConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
+import org.joml.Matrix3x2fStack;
 
 /**
  * Draws the Apple Music now-playing panel in the top-left corner of the HUD.
@@ -36,13 +38,48 @@ public final class NowPlayingHud {
 
 	private static float opacity;
 	private static long lastFrameMillis;
+	private static String lastKey = "";
+
+	/** Percentage of the default layout; changed by {@code /tapedeck size}. */
+	private static volatile int sizePercent = TapedeckConfig.DEFAULT_HUD_SIZE;
+
+	/** Set by {@code /tapedeck toggle} or its key binding. */
+	private static volatile boolean hidden;
 
 	private NowPlayingHud() {
 	}
 
+	/** Current panel size as a percentage of the default layout. */
+	public static int sizePercent() {
+		return sizePercent;
+	}
+
+	/** Applies a new size, clamped to the supported range; returns the value actually used. */
+	public static int setSizePercent(int percent) {
+		int applied = TapedeckConfig.clampHudSize(percent);
+		sizePercent = applied;
+		return applied;
+	}
+
+	public static boolean isHidden() {
+		return hidden;
+	}
+
+	public static void setHidden(boolean value) {
+		hidden = value;
+	}
+
+	/** Flips visibility and returns the new state. */
+	public static boolean toggleHidden() {
+		hidden = !hidden;
+		return hidden;
+	}
+
 	public static void render(GuiGraphicsExtractor graphics, NowPlayingInfo info) {
-		updateOpacity(info.hasTrack());
-		if (opacity < 0.01f) {
+		// Opacity keeps updating while hidden, so unhiding fades the panel back in instead
+		// of popping it onto the screen at full brightness.
+		updateOpacity(info);
+		if (hidden || opacity < 0.01f) {
 			return;
 		}
 
@@ -50,38 +87,52 @@ public final class NowPlayingHud {
 		Font font = mc.font;
 
 		Component heading = buildHeading(font, info);
-		// AppleScript does not always report a duration (radio streams, some local files).
-		boolean showTime = info.duration() > 0.0;
-		String timeText = NowPlayingInfo.formatTime(info.clampedPosition())
-				+ "/" + NowPlayingInfo.formatTime(info.duration());
+		// Not every source reports a duration: Apple Music's web player, for one, supplies
+		// no `mpris:length` at all. Show elapsed time alone rather than dropping the line.
+		boolean hasDuration = info.duration() > 0.0;
+		boolean showTime = hasDuration || info.clampedPosition() > 0.0;
+		String timeText = hasDuration
+				? NowPlayingInfo.formatTime(info.clampedPosition())
+						+ "/" + NowPlayingInfo.formatTime(info.duration())
+				: NowPlayingInfo.formatTime(info.clampedPosition());
 		Component time = showTime ? Component.literal(timeText) : null;
 
-		// Font.width returns a fractional value, and shadowed text is drawn one pixel
-		// wider than measured, so round up and add slack or the last glyph touches the border.
-		int contentWidth = (int) Math.ceil(Math.max(font.width(heading),
-				time == null ? 0.0f : font.width(time))) + SHADOW_ALLOWANCE;
+		// Widths are measured in unscaled units; the pose below scales the whole panel.
+		// Shadowed text is drawn one pixel wider than measured, hence the slack.
+		int contentWidth = Math.max(font.width(heading), time == null ? 0 : font.width(time))
+				+ SHADOW_ALLOWANCE;
 
 		int panelWidth = BORDER * 2 + PADDING * 2 + contentWidth;
 		int panelHeight = BORDER * 2 + PADDING * 2 + LINE_HEIGHT
 				+ (time == null ? 0 : LINE_GAP + LINE_HEIGHT);
 
-		int panelX = MARGIN;
-		int panelY = MARGIN;
 		int alpha = Math.round(Math.min(1.0f, opacity) * 255.0f);
 		int borderColor = scale(info.isPlaying() ? COLOR_BORDER_PLAYING : COLOR_BORDER_PAUSED, alpha);
 
-		graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight,
-				scale(COLOR_PANEL, alpha));
-		drawBorder(graphics, panelX, panelY, panelWidth, panelHeight, borderColor);
+		// Size is a zoom around the top-left margin: the panel keeps its distance from the
+		// screen corner and grows right and down. Push/pop so the transform cannot leak
+		// into the vanilla HUD elements drawn after this one.
+		float zoom = sizePercent / 100.0f;
+		Matrix3x2fStack pose = graphics.pose();
+		pose.pushMatrix();
+		try {
+			pose.translate(MARGIN, MARGIN);
+			pose.scale(zoom, zoom);
 
-		int textX = panelX + BORDER + PADDING;
-		int textY = panelY + BORDER + PADDING;
+			graphics.fill(0, 0, panelWidth, panelHeight, scale(COLOR_PANEL, alpha));
+			drawBorder(graphics, 0, 0, panelWidth, panelHeight, borderColor);
 
-		graphics.text(font, heading, textX, textY, scale(COLOR_TITLE, alpha), true);
+			int textX = BORDER + PADDING;
+			int textY = BORDER + PADDING;
 
-		if (time != null) {
-			graphics.text(font, time, textX, textY + LINE_HEIGHT + LINE_GAP,
-					scale(COLOR_TIME, alpha), true);
+			graphics.text(font, heading, textX, textY, scale(COLOR_TITLE, alpha), true);
+
+			if (time != null) {
+				graphics.text(font, time, textX, textY + LINE_HEIGHT + LINE_GAP,
+						scale(COLOR_TIME, alpha), true);
+			}
+		} finally {
+			pose.popMatrix();
 		}
 	}
 
@@ -96,9 +147,18 @@ public final class NowPlayingHud {
 
 	/**
 	 * Exponential approach to the target opacity so the panel fades instead of popping
-	 * as tracks change.
+	 * as tracks change. A new track restarts the fade; a pause does not, because the key
+	 * is derived from the metadata and not from the playback state.
 	 */
-	private static void updateOpacity(boolean visible) {
+	private static void updateOpacity(NowPlayingInfo info) {
+		boolean visible = info.hasTrack() && !hidden;
+		if (!info.key().equals(lastKey)) {
+			lastKey = info.key();
+			if (visible) {
+				opacity = 0.0f;
+			}
+		}
+
 		long now = Util.getMillis();
 		if (lastFrameMillis == 0L) {
 			opacity = visible ? 1.0f : 0.0f;
